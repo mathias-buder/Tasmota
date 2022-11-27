@@ -202,6 +202,7 @@ enum UserSelectablePins {
   GPIO_BP1658CJ_CLK, GPIO_BP1658CJ_DAT,// BP1658CJ
   GPIO_DINGTIAN_CLK, GPIO_DINGTIAN_SDI, GPIO_DINGTIAN_Q7, GPIO_DINGTIAN_PL, GPIO_DINGTIAN_RCK,  // Dingtian relay board - 595's & 165's pins
   GPIO_LD2410_TX, GPIO_LD2410_RX,      // HLK-LD2410
+  GPIO_ME007_TX, GPIO_ME007_RX,        // ME007 Serial interface
   GPIO_SENSOR_END };
 
 // Error as warning to rethink GPIO usage with max 2045
@@ -298,6 +299,7 @@ const char kSensorNames[] PROGMEM =
   D_SENSOR_SDS0X1_TX "|" D_SENSOR_SDS0X1_RX "|"
   D_SENSOR_SBR_TX "|" D_SENSOR_SBR_RX "|"
   D_SENSOR_SR04_TRIG "|" D_SENSOR_SR04_ECHO "|"
+  D_SENSOR_ME007_TX "|" D_SENSOR_ME007_RX "|"
   D_SENSOR_SDM120_TX "|" D_SENSOR_SDM120_RX "|"
   D_SENSOR_SDM630_TX "|" D_SENSOR_SDM630_RX "|"
   D_SENSOR_TM1638_CLK "|" D_SENSOR_TM1638_DIO "|" D_SENSOR_TM1638_STB "|"
@@ -770,6 +772,10 @@ const uint16_t kGpioNiceList[] PROGMEM = {
 #ifdef USE_SR04
   AGPIO(GPIO_SR04_TRIG),                // SR04 Tri/TXgger pin
   AGPIO(GPIO_SR04_ECHO),                // SR04 Ech/RXo pin
+#endif
+#ifdef USE_ME007
+  AGPIO(GPIO_ME007_TX),                // ME007 Tx pin
+  AGPIO(GPIO_ME007_RX),                // ME007 Rx pin
 #endif
 #ifdef USE_TM1638
   AGPIO(GPIO_TM1638CLK),                // TM1638 Clock
