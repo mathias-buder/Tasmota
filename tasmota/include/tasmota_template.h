@@ -299,7 +299,6 @@ const char kSensorNames[] PROGMEM =
   D_SENSOR_SDS0X1_TX "|" D_SENSOR_SDS0X1_RX "|"
   D_SENSOR_SBR_TX "|" D_SENSOR_SBR_RX "|"
   D_SENSOR_SR04_TRIG "|" D_SENSOR_SR04_ECHO "|"
-  D_SENSOR_ME007_TX "|" D_SENSOR_ME007_RX "|"
   D_SENSOR_SDM120_TX "|" D_SENSOR_SDM120_RX "|"
   D_SENSOR_SDM630_TX "|" D_SENSOR_SDM630_RX "|"
   D_SENSOR_TM1638_CLK "|" D_SENSOR_TM1638_DIO "|" D_SENSOR_TM1638_STB "|"
@@ -453,6 +452,7 @@ const char kSensorNames[] PROGMEM =
   D_SENSOR_BP1658CJ_CLK "|" D_SENSOR_BP1658CJ_DAT "|"
   D_GPIO_DINGTIAN_CLK "|" D_GPIO_DINGTIAN_SDI "|" D_GPIO_DINGTIAN_Q7 "|" D_GPIO_DINGTIAN_PL "|" D_GPIO_DINGTIAN_RCK "|"
   D_SENSOR_LD2410_TX "|" D_SENSOR_LD2410_RX "|"
+  D_SENSOR_ME007_TX "|" D_SENSOR_ME007_RX "|"
   ;
 
 const char kSensorNamesFixed[] PROGMEM =
@@ -774,8 +774,8 @@ const uint16_t kGpioNiceList[] PROGMEM = {
   AGPIO(GPIO_SR04_ECHO),                // SR04 Ech/RXo pin
 #endif
 #ifdef USE_ME007
-  AGPIO(GPIO_ME007_TX),                // ME007 Tx pin
-  AGPIO(GPIO_ME007_RX),                // ME007 Rx pin
+  AGPIO(GPIO_ME007_TX),                // ME007 Tx pin (xsns_23_me007.ino)
+  AGPIO(GPIO_ME007_RX),                // ME007 Rx pin (xsns_23_me007.ino)
 #endif
 #ifdef USE_TM1638
   AGPIO(GPIO_TM1638CLK),                // TM1638 Clock

@@ -693,8 +693,6 @@
 #define D_SENSOR_MBR_RX        "ModBr Rx"
 #define D_SENSOR_SR04_TRIG     "SR04 Tri/TX"
 #define D_SENSOR_SR04_ECHO     "SR04 Ech/RX"
-#define D_SENSOR_ME007_TX      "ME007 TX"
-#define D_SENSOR_ME007_RX      "ME007 RX"
 #define D_SENSOR_NRG_MBS_TX    "NrgModbus Tx"
 #define D_SENSOR_NRG_MBS_RX    "NrgModbus Rx"
 #define D_SENSOR_SDM72_TX      "SDM72 Tx"
@@ -915,6 +913,8 @@
 #define D_SENSOR_CM11_TX       "CM110x TX"
 #define D_SENSOR_CM11_RX       "CM110x RX"
 #define D_SENSOR_FLOWRATEMETER "Flowrate"
+#define D_SENSOR_ME007_TX      "ME007 Tx"
+#define D_SENSOR_ME007_RX      "ME007 Rx"
 
 // Units
 #define D_UNIT_AMPERE "A"
