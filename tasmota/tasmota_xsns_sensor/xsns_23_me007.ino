@@ -84,10 +84,6 @@ bool Xsns23( uint32_t function )
 {
     bool result_b = false;
 
-#ifdef ME007_DEBUG
-    AddLog( LOG_LEVEL_DEBUG_MORE, PSTR("ME007:Xsns23:CallbackId: %i"), function );
-#endif
-
     switch ( function )
     {
     case FUNC_EVERY_SECOND:
