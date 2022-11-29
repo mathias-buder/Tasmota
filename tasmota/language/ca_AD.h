@@ -913,7 +913,7 @@
 #define D_SENSOR_CM11_TX       "CM110x TX"
 #define D_SENSOR_CM11_RX       "CM110x RX"
 #define D_SENSOR_FLOWRATEMETER "Cabal"
-#define D_SENSOR_ME007_TX      "ME007 Tx"
+#define D_SENSOR_ME007_TRIG    "ME007 Tri"
 #define D_SENSOR_ME007_RX      "ME007 Rx"
 
 // Units
