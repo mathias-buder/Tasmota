@@ -48,7 +48,7 @@
 // #define ME007_SERIAL_IF_BUFFER_SIZE 32U  /**< Frame buffer: 32 byte */
 #define ME007_SERIAL_SOF                   0xFF /**< Start of frame indicator (header) */
 #define ME007_SERIAL_FRAME_SIZE            6U   /**< Total frame size: 6 byte  */
-#define ME007_SERIAL_DATA_SIZE             4U   /**< Distance (2 byte) + temperature (2 byte) data: 4 byte */
+#define ME007_SERIAL_DATA_SIZE             5U   /**< Header (1Byte) + distance (2 byte) + temperature (2 byte): 5 byte */
 #define ME007_SERIAL_MAX_WAIT_TIME         61U  /**< Max. wait time for data after trigger signal @unit ms */
 #define ME007_SERIAL_MAX_DATA_RECEIVE_TIME 50U  /**< Max. time to receive entire data frame @unit ms */
 
@@ -93,7 +93,7 @@ struct
     uint8_t          pin_trig_u8;
     ME007_STATE_TYPE state_e;
     bool             sensorDetected_b;
-    float            distance_f32;
+    float            distance_cm_f32;
     float            temperature_f32;
 } me007_data_s;
 
@@ -158,6 +158,11 @@ void Me007Init( void )
     if ( ( nullptr != p_SerialIf )
          && ( true == p_SerialIf->begin( ME007_SERIAL_IF_BAUD_RATE ) ) )
     {
+        if ( true == p_SerialIf->hardwareSerial() )
+        {
+            ClaimSerial();
+        }
+
         /* Configure trigger pin as output */
         pinMode( me007_data_s.pin_trig_u8, OUTPUT );
         digitalWrite( me007_data_s.pin_trig_u8, HIGH ); /**< @details Set trigger pin to high-level as it ME007 requires a falling edge to initiate measurement */
@@ -170,13 +175,13 @@ void Me007Init( void )
 
 bool Me007ReadValue( float* p_distance_f32, float* p_temperature_f32 )
 {
-    uint8_t                   byte_cnt_u8             = 0U;
-    ME007_SERIAL_RECEIVE_TYPE state_e                 = ME007_SERIAL_RECEIVE_TYPE_SOF;
-    uint32_t                  timestamp_ms_u32        = 0U;
-    uint8_t                   data_receive_time_ms_u8 = 0U;
-    bool                      status_b                = false; /**< @details Status io sensor reading, false: faulty reading, true: valid reading */
-    uint16_t                  distance_data_u16       = 0U;
-    uint16_t                  temperature_data_u16    = 0U;
+    ME007_SERIAL_RECEIVE_TYPE state_e                            = ME007_SERIAL_RECEIVE_TYPE_SOF;
+    uint8_t                   buffer_vu8[ME007_SERIAL_DATA_SIZE] = {0U};
+    uint8_t                   buffer_idx_u8                      = 0U;
+    uint8_t                   data_byte_u8                       = 0U;
+    bool                      status_b                           = false; /**< @details Status io sensor reading, false: faulty reading, true: valid reading */
+    uint32_t                  timestamp_ms_u32                   = 0U;
+    uint8_t                   data_receive_time_ms_u8            = 0U;
 
     if ( ( nullptr != p_distance_f32 )
          && ( nullptr != p_temperature_f32 )
@@ -196,41 +201,77 @@ bool Me007ReadValue( float* p_distance_f32, float* p_temperature_f32 )
         /* Max. wait time is T2max + T3max = 61 ms (see https://wiki.dfrobot.com/Water-proof%20Ultrasonic%20Sensor%20(ULS)%20%20SKU:%20SEN0300, section "Serial Output" for details) */
         while ( ( timestamp_ms_u32 + ME007_SERIAL_MAX_WAIT_TIME + data_receive_time_ms_u8 ) >= millis() )
         {
-            if ( p_SerialIf->available() )
+            if ( 0U < p_SerialIf->available() )
             {
-                DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Serial: Byte available" ) );
                 /* Extend time to receive entire data frame */
                 data_receive_time_ms_u8 = ME007_SERIAL_MAX_DATA_RECEIVE_TIME;
 
                 /* Read 1 byte of data */
-                uint8_t data_u8 = p_SerialIf->read();
+                data_byte_u8 = p_SerialIf->read();
 
-                DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Serial: Byte received: 0x%x" ), data_u8 );
+                DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Serial: Byte received: 0x%x" ), data_byte_u8 );
 
                 switch ( state_e )
                 {
                 case ME007_SERIAL_RECEIVE_TYPE_SOF:
-                    if ( ME007_SERIAL_SOF == data_u8 )
+                    if ( ME007_SERIAL_SOF == data_byte_u8 )
                     {
-                        byte_cnt_u8++;
+                        buffer_vu8[buffer_idx_u8++] = data_byte_u8;
                         state_e = ME007_SERIAL_RECEIVE_TYPE_DATA;
-                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Serial: SOF detected" ) );
+                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "(Idx: %i) Serial: SOF detected" ), buffer_idx_u8 );
                     }
                     break;
 
                 case ME007_SERIAL_RECEIVE_TYPE_DATA:
-                    if ( ( ME007_SERIAL_DATA_SIZE + 1U ) >= byte_cnt_u8 )
-                    {
+                    buffer_vu8[buffer_idx_u8++] = data_byte_u8; 
+                    DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "(Idx: %i) Receiving distance/temperature data" ), buffer_idx_u8 );
 
-                        byte_cnt_u8++;
-                    }
-                    else
+                    if( ME007_SERIAL_DATA_SIZE <= buffer_idx_u8 )
                     {
                         state_e = ME007_SERIAL_RECEIVE_TYPE_CHECKSUM;
                     }
+
                     break;
 
                 case ME007_SERIAL_RECEIVE_TYPE_CHECKSUM:
+                    /* Calculate expected checksum */
+                    uint16_t sum_u16 = 0U;
+                    for( uint8_t i = 0U; i < ME007_SERIAL_DATA_SIZE; ++i )
+                    {
+                        sum_u16 += buffer_vu8[i];
+                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Sum[%i]: %i (value: %i)"), i, sum_u16, buffer_vu8[i] );
+                    }
+
+                    /* Only the the lower 8 bit are used */
+                    sum_u16 &= 0x00FF;
+
+                    DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Checking data sum %i against checksum %i" ), sum_u16, data_byte_u8 );
+
+                    /* Check for correct checksum */
+                    if( sum_u16 == data_byte_u8 )
+                    {
+                        /* Assemble and scale distance / temperature values */
+                        me007_data_s.distance_cm_f32 = ( ( buffer_vu8[1U] << 8U ) + buffer_vu8[2U] ) / 10.0F;
+
+                        /* Check sign-bit */
+                        if( 0x80 == ( buffer_vu8[2U] & 0x80) )
+                        {
+                            buffer_vu8[2U] ^= 0x80;
+                        }
+
+                        me007_data_s.temperature_f32 = ( ( buffer_vu8[3U] << 8U ) + buffer_vu8[4U] ) / 10.0F;
+
+
+                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Distance [cm]: %f, Temperature [deg]: %f"),
+                                          me007_data_s.distance_cm_f32,
+                                          me007_data_s.temperature_f32 );
+
+                    }
+                    else
+                    {
+
+                    }
+
 
                     break;
                 }
@@ -246,12 +287,12 @@ void Me007Show( uint8_t type_u8 )
     switch ( type_u8 )
     {
     case ME007_SHOW_TYPE_JS:
-        ResponseAppend_P( PSTR( ",\"ME007_MQTT_MSG_TAG\":{\"" D_JSON_DISTANCE "\":%1_f}" ), &me007_data_s.distance_f32 );
-        ResponseAppend_P( PSTR( ",\"ME007_MQTT_MSG_TAG\":{\"" D_JSON_TEMPERATURE "\":%1_f}" ), &me007_data_s.temperature_f32 );
+        ResponseAppend_P( PSTR( ",\"ME007\":{\"" D_JSON_DISTANCE "\":%1_f}" ), &me007_data_s.distance_cm_f32 );
+        ResponseAppend_P( PSTR( ",\"ME007\":{\"" D_JSON_TEMPERATURE "\":%1_f}" ), &me007_data_s.temperature_f32 );
 #ifdef USE_DOMOTICZ
         if ( 0U == TasmotaGlobal.tele_period )
         {
-            DomoticzFloatSensor( DZ_COUNT, me007_data_s.distance_f32 );   /**< @details Send distance as Domoticz counter value */
+            DomoticzFloatSensor( DZ_COUNT, me007_data_s.distance_cm_f32 );   /**< @details Send distance as Domoticz counter value */
             DomoticzFloatSensor( DZ_TEMP, me007_data_s.temperature_f32 ); /**< @details Send distance as Domoticz temperature value */
         }
 #endif /* USE_DOMOTICZ */
@@ -260,7 +301,7 @@ void Me007Show( uint8_t type_u8 )
     case ME007_SHOW_TYPE_WS:
         WSContentSend_PD( HTTP_SNS_F_DISTANCE_CM,
                           "ME007",
-                          &me007_data_s.distance_f32 );
+                          &me007_data_s.distance_cm_f32 );
 
         WSContentSend_PD( HTTP_SNS_F_TEMP,
                           "ME007", Settings->flag2.temperature_resolution,
@@ -289,7 +330,7 @@ bool Xsns23( uint32_t function )
         break;
 
     case FUNC_EVERY_SECOND:
-        Me007ReadValue( &me007_data_s.distance_f32, &me007_data_s.temperature_f32 );
+        Me007ReadValue( &me007_data_s.distance_cm_f32, &me007_data_s.temperature_f32 );
         result_b = true;
         break;
     case FUNC_JSON_APPEND:
