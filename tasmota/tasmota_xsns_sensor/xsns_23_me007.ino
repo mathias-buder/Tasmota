@@ -139,13 +139,13 @@ void me007_show( uint8_t type_u8 );
 /*********************************************************************************************/
 void me007_init( void )
 {
-    DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Initializing ..." ) );
+    AddLog( LOG_LEVEL_INFO, PSTR( ME007_DEBUG_MSG_TAG "Initializing ..." ) );
 
     /* Check if sensor pins are selected/used in web-interface */
     if (    ( false == PinUsed( GPIO_ME007_TRIG ) )
          || ( false == PinUsed( GPIO_ME007_RX ) ) )
     {
-        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Serial/Trigger interface not configured" ) );
+        AddLog( LOG_LEVEL_ERROR, PSTR( ME007_DEBUG_MSG_TAG "Serial/Trigger interface not configured" ) );
         return;
     }
 
@@ -175,7 +175,7 @@ void me007_init( void )
         digitalWrite( me007_data_s.pin_trig_u8, HIGH ); /**< @details Set trigger pin to high-level as it ME007 requires a falling edge to initiate measurement */
 
         /* Detect sensor */
-        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Detecting ..." ) );
+        AddLog( LOG_LEVEL_INFO, PSTR( ME007_DEBUG_MSG_TAG "Detecting ..." ) );
         for( uint8_t idx_u8 = 0U; idx_u8 < ME007_SENSOR_NUM_ERROR; ++idx_u8 )
         {
             bool detected_b = me007_measure( &me007_data_s.distance_cm_f32,
@@ -186,12 +186,11 @@ void me007_init( void )
                 break;
             }
         }
-
-        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "%s" ), me007_data_s.state_e == ME007_STATE_DETECTED ? "Detected" : "Not detected, Sensor deactivated");
+        AddLog( LOG_LEVEL_INFO, PSTR( ME007_DEBUG_MSG_TAG "%s" ),me007_data_s.state_e == ME007_STATE_DETECTED ? "Detected" : "Not detected, Sensor deactivated" );
     }
     else
     {
-        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Serial interface unavailable" ) );
+        AddLog( LOG_LEVEL_ERROR, PSTR( ME007_DEBUG_MSG_TAG "Serial interface unavailable" ) );
     }
 }
 
@@ -319,34 +318,38 @@ bool me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
 
 void me007_read_value( void )
 {
-    bool status_b;
-
     /* Record some sensor measurements */
     for ( uint8_t i = 0U; i < ME007_MEDIAN_FILTER_SIZE; ++i )
     {
-        status_b = me007_measure( &me007_data_s.buffer_distance_cm_vf32[i],
-                                  &me007_data_s.temperature_deg_f32 );
+        bool status_b = me007_measure( &me007_data_s.buffer_distance_cm_vf32[i],
+                                       &me007_data_s.temperature_deg_f32 );
 
-        if( false == status_b )
+        if ( true == status_b )
+        {
+            /* Apply histogram filter */
+            me007_data_s.distance_cm_f32 = me007_data_s.buffer_distance_cm_vf32[0];
+            
+            if ( 0U < me007_data_s.error_cnt_u8 )
+            {
+                me007_data_s.error_cnt_u8--;
+            }
+        }
+        else
         {
             me007_data_s.error_cnt_u8++;
         }
-        else if (    ( true == status_b )
-                  && ( 0U < me007_data_s.error_cnt_u8 ) )
-        {
-            me007_data_s.error_cnt_u8--;
-        }
 
+        /* Check error counter and deactivate sensor in case error is present for ME007_SENSOR_NUM_ERROR cycles */
         if( ME007_SENSOR_NUM_ERROR <= me007_data_s.error_cnt_u8 )
         {
-            DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Error @ counter: %i, Sensor deactivated" ), me007_data_s.error_cnt_u8 );
+            AddLog( LOG_LEVEL_ERROR, PSTR( ME007_DEBUG_MSG_TAG "Error @ counter: %i, Sensor deactivated" ), me007_data_s.error_cnt_u8 );
             me007_data_s.state_e = ME007_STATE_NOT_DETECTED;
             return;
         }
     }
 
 
-    me007_data_s.distance_cm_f32 = me007_data_s.buffer_distance_cm_vf32[0];
+
 
 }
 
