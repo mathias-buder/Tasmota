@@ -39,13 +39,14 @@
 #define XSNS_23 23
 
 #define ME007_DEBUG_MSG_TAG "ME007: "
-#define ME007_MQTT_MSG_TAG  "ME007"
+#define ME007_WS_MQTT_MSG_TAG  "ME007"
 #define ME007_LOG_DATA_SIZE 180U /**< Byte */
+#define ME007_MIN_SENSOR_DISTANCE          30U  /* @unit cm */
 #ifndef ME007_MAX_SENSOR_DISTANCE
-#define ME007_MAX_SENSOR_DISTANCE 800U /**< Maximum measurement distance: 8 m */
+#define ME007_MAX_SENSOR_DISTANCE          800U /**< Maximum measurement distance: 8 m */
 #endif
-#define ME007_SERIAL_IF_BAUD_RATE 9600U
-// #define ME007_SERIAL_IF_BUFFER_SIZE 32U  /**< Frame buffer: 32 byte */
+#define ME007_WS_SCALE_SWITCH_THRESH       100U /* @unit cm */
+#define ME007_SERIAL_IF_BAUD_RATE          9600U
 #define ME007_SERIAL_SOF                   0xFF /**< Start of frame indicator (header) */
 #define ME007_SERIAL_FRAME_SIZE            6U   /**< Total frame size: 6 byte  */
 #define ME007_SERIAL_DATA_SIZE             5U   /**< Header (1Byte) + distance (2 byte) + temperature (2 byte): 5 byte */
@@ -94,7 +95,7 @@ struct
     ME007_STATE_TYPE state_e;
     bool             sensorDetected_b;
     float            distance_cm_f32;
-    float            temperature_f32;
+    float            temperature_deg_f32;
 } me007_data_s;
 
 /*********************************************************************************************/
@@ -111,31 +112,31 @@ TasmotaSerial* p_SerialIf = nullptr; /**< @details Pointer to serial interface o
  * low-level interface is working correctly.
  * @param[in] uint8_t I2C error code
  */
-void Me007Init( void );
+void me007_init( void );
 
 /**
  * @details This function performs a read/write test on the specified I2C device to make sure the
  * low-level interface is working correctly.
  * @param[in] uint8_t I2C error code
  */
-void Me007ReadValue( void );
+bool me007_measure( float* p_distance_f32, float* p_temperature_f32 );
 
 /**
  * @details This function performs a read/write test on the specified I2C device to make sure the
  * low-level interface is working correctly.
  * @param[in] uint8_t I2C error code
  */
-void Me007Show( uint8_t type_u8 );
+void me007_show( uint8_t type_u8 );
 
 /*********************************************************************************************/
 /* Function Definitions */
 /*********************************************************************************************/
-void Me007Init( void )
+void me007_init( void )
 {
     DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Initializing ..." ) );
 
     /* Check if sensor pins are selected/used in web-interface */
-    if ( ( false == PinUsed( GPIO_ME007_TRIG ) )
+    if (    ( false == PinUsed( GPIO_ME007_TRIG ) )
          || ( false == PinUsed( GPIO_ME007_RX ) ) )
     {
         DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Serial/Trigger interface not configured" ) );
@@ -155,8 +156,8 @@ void Me007Init( void )
     /* Only Rx pin is required as ME007 is controlled using its trigger pin. Therefore, passing value "-1" as transmit_pin */
     p_SerialIf = new TasmotaSerial( me007_data_s.pin_rx_u8, -1, 1U );
 
-    if ( ( nullptr != p_SerialIf )
-         && ( true == p_SerialIf->begin( ME007_SERIAL_IF_BAUD_RATE ) ) )
+    if (    ( nullptr != p_SerialIf )
+         && ( true    == p_SerialIf->begin( ME007_SERIAL_IF_BAUD_RATE ) ) )
     {
         if ( true == p_SerialIf->hardwareSerial() )
         {
@@ -173,21 +174,21 @@ void Me007Init( void )
     }
 }
 
-bool Me007ReadValue( float* p_distance_f32, float* p_temperature_f32 )
+bool me007_measure( float* p_distance_f32, float* p_temperature_f32 )
 {
+    bool                      status_b                           = false; /**< @details Status io sensor reading, false: faulty reading, true: valid reading */
     ME007_SERIAL_RECEIVE_TYPE state_e                            = ME007_SERIAL_RECEIVE_TYPE_SOF;
     uint8_t                   buffer_vu8[ME007_SERIAL_DATA_SIZE] = {0U};
     uint8_t                   buffer_idx_u8                      = 0U;
     uint8_t                   data_byte_u8                       = 0U;
-    bool                      status_b                           = false; /**< @details Status io sensor reading, false: faulty reading, true: valid reading */
     uint32_t                  timestamp_ms_u32                   = 0U;
     uint8_t                   data_receive_time_ms_u8            = 0U;
 
-    if ( ( nullptr != p_distance_f32 )
+    if (    ( nullptr != p_distance_f32 )
          && ( nullptr != p_temperature_f32 )
          && ( nullptr != p_SerialIf ) )
     {
-        /* Trigger sensor reading */
+        /* Trigger new sensor measurement */
         digitalWrite( me007_data_s.pin_trig_u8, LOW );
         delayMicroseconds( 400 );
         digitalWrite( me007_data_s.pin_trig_u8, HIGH );
@@ -226,11 +227,11 @@ bool Me007ReadValue( float* p_distance_f32, float* p_temperature_f32 )
                     buffer_vu8[buffer_idx_u8++] = data_byte_u8; 
                     DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "(Idx: %i) Receiving distance/temperature data" ), buffer_idx_u8 );
 
+                    /* Move to next state if 4 data bytes have been received */
                     if( ME007_SERIAL_DATA_SIZE <= buffer_idx_u8 )
                     {
                         state_e = ME007_SERIAL_RECEIVE_TYPE_CHECKSUM;
                     }
-
                     break;
 
                 case ME007_SERIAL_RECEIVE_TYPE_CHECKSUM:
@@ -242,37 +243,51 @@ bool Me007ReadValue( float* p_distance_f32, float* p_temperature_f32 )
                         DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Sum[%i]: %i (value: %i)"), i, sum_u16, buffer_vu8[i] );
                     }
 
-                    /* Only the the lower 8 bit are used */
+                    /* Only the the lower 8 bit shall be used */
                     sum_u16 &= 0x00FF;
 
-                    DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Checking data sum %i against checksum %i" ), sum_u16, data_byte_u8 );
+                    DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Comparing expected sum %i to checksum %i" ), sum_u16, data_byte_u8 );
 
-                    /* Check for correct checksum */
+                    /* Compare expected and receive checksum */
                     if( sum_u16 == data_byte_u8 )
                     {
-                        /* Assemble and scale distance / temperature values */
+                        /* Assemble and scale distance to cm */
                         me007_data_s.distance_cm_f32 = ( ( buffer_vu8[1U] << 8U ) + buffer_vu8[2U] ) / 10.0F;
 
-                        /* Check sign-bit */
-                        if( 0x80 == ( buffer_vu8[2U] & 0x80) )
+                        /* Apply physical sensor measurement limits */
+                        if( ME007_MIN_SENSOR_DISTANCE > me007_data_s.distance_cm_f32 )
+                        {
+                            me007_data_s.distance_cm_f32 = 0.0F;
+                        }
+                        else if( ME007_MAX_SENSOR_DISTANCE < me007_data_s.distance_cm_f32 )
+                        {
+                            me007_data_s.distance_cm_f32 = ME007_MAX_SENSOR_DISTANCE;
+                        }
+                        else
+                        {
+                            /* Ok: Measurement is within the physical sensor measurement limits */
+                        }
+                        
+                        /* Assemble and scale temperature °C */
+                        /* Check sign-bit (MSB) */
+                        if( 0x80 == ( buffer_vu8[2U] & 0x80 ) )
                         {
                             buffer_vu8[2U] ^= 0x80;
                         }
 
-                        me007_data_s.temperature_f32 = ( ( buffer_vu8[3U] << 8U ) + buffer_vu8[4U] ) / 10.0F;
+                        me007_data_s.temperature_deg_f32 = ( ( buffer_vu8[3U] << 8U ) + buffer_vu8[4U] ) / 10.0F;
 
+                        /* Indicate that reading was successful */
+                        status_b = true;
 
-                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Distance [cm]: %f, Temperature [deg]: %f"),
-                                          me007_data_s.distance_cm_f32,
-                                          me007_data_s.temperature_f32 );
-
+                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Distance [cm]: %s, Temperature [deg]: %s"),
+                                          String( me007_data_s.distance_cm_f32, 1U ).c_str(),
+                                          String( me007_data_s.temperature_deg_f32, 1U ).c_str() );
                     }
                     else
                     {
-
+                        /* status_b is set to false already */
                     }
-
-
                     break;
                 }
             }
@@ -282,31 +297,43 @@ bool Me007ReadValue( float* p_distance_f32, float* p_temperature_f32 )
     return status_b;
 }
 
-void Me007Show( uint8_t type_u8 )
+void me007_show( uint8_t type_u8 )
 {
     switch ( type_u8 )
     {
     case ME007_SHOW_TYPE_JS:
-        ResponseAppend_P( PSTR( ",\"ME007\":{\"" D_JSON_DISTANCE "\":%1_f}" ), &me007_data_s.distance_cm_f32 );
-        ResponseAppend_P( PSTR( ",\"ME007\":{\"" D_JSON_TEMPERATURE "\":%1_f}" ), &me007_data_s.temperature_f32 );
+        ResponseAppend_P( PSTR( ",\"ME007\":{\"" D_JSON_DISTANCE "\":%1_f}" ),    &me007_data_s.distance_cm_f32 );
+        ResponseAppend_P( PSTR( ",\"ME007\":{\"" D_JSON_TEMPERATURE "\":%1_f}" ), &me007_data_s.temperature_deg_f32 ); 
 #ifdef USE_DOMOTICZ
         if ( 0U == TasmotaGlobal.tele_period )
         {
-            DomoticzFloatSensor( DZ_COUNT, me007_data_s.distance_cm_f32 );   /**< @details Send distance as Domoticz counter value */
-            DomoticzFloatSensor( DZ_TEMP, me007_data_s.temperature_f32 ); /**< @details Send distance as Domoticz temperature value */
+            DomoticzFloatSensor( DZ_COUNT, me007_data_s.distance_cm_f32 );    /**< @details Send distance as Domoticz counter value */
+            DomoticzFloatSensor( DZ_TEMP, me007_data_s.temperature_deg_f32 ); /**< @details Send distance as Domoticz temperature value */
         }
 #endif /* USE_DOMOTICZ */
         break;
 #ifdef USE_WEBSERVER
     case ME007_SHOW_TYPE_WS:
-        WSContentSend_PD( HTTP_SNS_F_DISTANCE_CM,
-                          "ME007",
-                          &me007_data_s.distance_cm_f32 );
+        if( ME007_WS_SCALE_SWITCH_THRESH > me007_data_s.distance_cm_f32 )
+        {
+            WSContentSend_PD( HTTP_SNS_F_DISTANCE_CM,
+                              ME007_WS_MQTT_MSG_TAG,
+                              &me007_data_s.distance_cm_f32 );
+        }
+        else
+        {
+            /* Convert distance to meter */
+            float ws_distance_f32 = me007_data_s.distance_cm_f32 / 100.0F;
+            WSContentSend_PD( HTTP_SNS_F_DISTANCE_M,
+                              ME007_WS_MQTT_MSG_TAG,
+                              &ws_distance_f32 );
+        }
+
 
         WSContentSend_PD( HTTP_SNS_F_TEMP,
-                          "ME007", Settings->flag2.temperature_resolution,
-                          &me007_data_s.temperature_f32,
-                          D_UNIT_CELSIUS );
+                          ME007_WS_MQTT_MSG_TAG,
+                          Settings->flag2.temperature_resolution,
+                          &me007_data_s.temperature_deg_f32 );
         break;
 #endif /* USE_WEBSERVER */
 
@@ -326,19 +353,19 @@ bool Xsns23( uint32_t function )
     switch ( function )
     {
     case FUNC_INIT:
-        Me007Init();
+        me007_init();
         break;
 
     case FUNC_EVERY_SECOND:
-        Me007ReadValue( &me007_data_s.distance_cm_f32, &me007_data_s.temperature_f32 );
+        me007_measure( &me007_data_s.distance_cm_f32, &me007_data_s.temperature_deg_f32 );
         result_b = true;
         break;
     case FUNC_JSON_APPEND:
-        Me007Show( ME007_SHOW_TYPE_JS );
+        me007_show( ME007_SHOW_TYPE_JS );
         break;
 #ifdef USE_WEBSERVER
     case FUNC_WEB_SENSOR:
-        Me007Show( ME007_SHOW_TYPE_WS );
+        me007_show( ME007_SHOW_TYPE_WS );
         break;
 #endif   // USE_WEBSERVER
     }
