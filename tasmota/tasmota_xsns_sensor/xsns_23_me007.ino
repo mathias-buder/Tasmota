@@ -359,8 +359,9 @@ void me007_show( uint8_t type_u8 )
     switch ( type_u8 )
     {
     case ME007_SHOW_TYPE_JS:
-        ResponseAppend_P( PSTR( ",\"" ME007_WS_MQTT_MSG_TAG "\":{\"" D_JSON_DISTANCE "\":%1_f}" ),    &me007_data_s.distance_cm_f32 );
-        ResponseAppend_P( PSTR( ",\"" ME007_WS_MQTT_MSG_TAG "\":{\"" D_JSON_TEMPERATURE "\":%1_f}" ), &me007_data_s.temperature_deg_f32 );
+        ResponseAppend_P( PSTR( ",\"" ME007_WS_MQTT_MSG_TAG "\":{\"" D_JSON_DISTANCE "\":%1_f,\"" D_JSON_TEMPERATURE "\":%1_f}" ),
+                               &me007_data_s.distance_cm_f32,
+                               &me007_data_s.temperature_deg_f32 );
 #ifdef USE_DOMOTICZ
         if ( 0U == TasmotaGlobal.tele_period )
         {
