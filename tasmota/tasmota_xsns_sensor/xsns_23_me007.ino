@@ -38,8 +38,11 @@
 /*********************************************************************************************/
 #define XSNS_23 23
 
-#define ME007_DEBUG_MSG_TAG "ME007: "
+#define ME007_DEBUG_MSG_TAG                "ME007: "
 #define ME007_WS_MQTT_MSG_TAG              "ME007"
+#define ME007_SENSOR_ERROR_CNT_CURRENT_TAG "ErrorCounterCurrent"
+#define ME007_SENSOR_ERROR_CNT_TOTAL_TAG   "ErrorCounterTotal"
+
 
 #define ME007_MIN_SENSOR_DISTANCE          30U  /* @unit cm */
 #ifndef ME007_MAX_SENSOR_DISTANCE
@@ -52,8 +55,9 @@
 #define ME007_SERIAL_DATA_SIZE             5U   /**< Header (1Byte) + distance (2 byte) + temperature (2 byte): 5 byte */
 #define ME007_SERIAL_MAX_WAIT_TIME         61U  /**< Max. wait time for data after trigger signal @unit ms */
 #define ME007_SERIAL_MAX_DATA_RECEIVE_TIME 50U  /**< Max. time to receive entire data frame @unit ms */
-#define ME007_MEDIAN_FILTER_SIZE           5U  /**< Median filter samples @unit sample */
-#define ME007_SENSOR_NUM_ERROR             3U  /**< Number of tries to detect sensor */
+#define ME007_TRIG_SIG_DURATION            4U   /**< Time duration of trigger low-pulse @unit ms */
+#define ME007_MEDIAN_FILTER_SIZE           5U   /**< Median filter samples @unit sample */
+#define ME007_SENSOR_NUM_ERROR             10U  /**< Number of tries to detect sensor */
 
 
 
@@ -101,7 +105,8 @@ struct
     float            distance_cm_f32;
     float            temperature_deg_f32;
     float            buffer_distance_cm_vf32[ME007_MEDIAN_FILTER_SIZE];
-    uint8_t          error_cnt_u8;
+    uint8_t          error_cnt_current_u8;
+    uint16_t         error_cnt_total_u16;
 } me007_data_s;
 
 /*********************************************************************************************/
@@ -150,8 +155,9 @@ void me007_init( void )
     }
 
     /* Init global sensor state to ME007_STATE_NOT_DETECTED */
-    me007_data_s.state_e      = ME007_STATE_NOT_DETECTED;
-    me007_data_s.error_cnt_u8 = 0U;
+    me007_data_s.state_e            = ME007_STATE_NOT_DETECTED;
+    me007_data_s.error_cnt_current_u8       = 0U;
+    me007_data_s.error_cnt_total_u16 = 0U;
 
     /* Store real pin number */
     me007_data_s.pin_rx_u8   = Pin( GPIO_ME007_RX );
@@ -185,6 +191,10 @@ void me007_init( void )
                 me007_data_s.state_e = ME007_STATE_DETECTED;
                 break;
             }
+            else
+            {
+                DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Measurement error: %i" ), idx_u8 );
+            }
         }
         AddLog( LOG_LEVEL_INFO, PSTR( ME007_DEBUG_MSG_TAG "%s" ),me007_data_s.state_e == ME007_STATE_DETECTED ? "Detected" : "Not detected, Sensor deactivated" );
     }
@@ -210,7 +220,7 @@ bool me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
     {
         /* Trigger new sensor measurement */
         digitalWrite( me007_data_s.pin_trig_u8, LOW );
-        delayMicroseconds( 400 );                       /**< @details Wait 400µs to give the oin time to go low */
+        delay( ME007_TRIG_SIG_DURATION );               /**< @details Wait 1ms to give the oin time to go low */
         digitalWrite( me007_data_s.pin_trig_u8, HIGH );
 
         /* Store trigger time */
@@ -257,10 +267,10 @@ bool me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
                 case ME007_SERIAL_RECEIVE_TYPE_CHECKSUM:
                     /* Calculate expected checksum */
                     uint16_t sum_u16 = 0U;
-                    for( uint8_t i = 0U; i < ME007_SERIAL_DATA_SIZE; ++i )
+                    for( uint8_t idx_u8 = 0U; idx_u8 < ME007_SERIAL_DATA_SIZE; ++idx_u8 )
                     {
-                        sum_u16 += buffer_vu8[i];
-                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Sum[%i]: %i (value: %i)"), i, sum_u16, buffer_vu8[i] );
+                        sum_u16 += buffer_vu8[idx_u8];
+                        DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Sum[%i]: %i (value: %i)"), idx_u8, sum_u16, buffer_vu8[idx_u8] );
                     }
 
                     /* Only the the lower 8 bit shall be used */
@@ -301,7 +311,7 @@ bool me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
                                           String( *p_distance_cm_f32, 1U ).c_str(),
                                           String( *p_temperature_f32, 1U ).c_str() );
 
-                        /* Indicate that measurement is valid */
+                        /* Early-return in case measurement is valid */
                         return true;
                     }
                     else
@@ -319,9 +329,9 @@ bool me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
 void me007_read_value( void )
 {
     /* Record some sensor measurements */
-    for ( uint8_t i = 0U; i < ME007_MEDIAN_FILTER_SIZE; ++i )
+    for ( uint8_t idx_u8 = 0U; idx_u8 < ME007_MEDIAN_FILTER_SIZE; ++idx_u8 )
     {
-        bool status_b = me007_measure( &me007_data_s.buffer_distance_cm_vf32[i],
+        bool status_b = me007_measure( &me007_data_s.buffer_distance_cm_vf32[idx_u8],
                                        &me007_data_s.temperature_deg_f32 );
 
         if ( true == status_b )
@@ -329,28 +339,27 @@ void me007_read_value( void )
             /* Apply histogram filter */
             me007_data_s.distance_cm_f32 = me007_data_s.buffer_distance_cm_vf32[0];
             
-            if ( 0U < me007_data_s.error_cnt_u8 )
+            if ( 0U < me007_data_s.error_cnt_current_u8 )
             {
-                me007_data_s.error_cnt_u8--;
+                me007_data_s.error_cnt_current_u8--;
             }
         }
         else
         {
-            me007_data_s.error_cnt_u8++;
+            me007_data_s.error_cnt_current_u8++;
+
+            /* Store total number of measurement errors */
+            me007_data_s.error_cnt_total_u16++;
         }
 
         /* Check error counter and deactivate sensor in case error is present for ME007_SENSOR_NUM_ERROR cycles */
-        if( ME007_SENSOR_NUM_ERROR <= me007_data_s.error_cnt_u8 )
+        if( ME007_SENSOR_NUM_ERROR <= me007_data_s.error_cnt_current_u8 )
         {
-            AddLog( LOG_LEVEL_ERROR, PSTR( ME007_DEBUG_MSG_TAG "Error @ counter: %i, Sensor deactivated" ), me007_data_s.error_cnt_u8 );
+            AddLog( LOG_LEVEL_ERROR, PSTR( ME007_DEBUG_MSG_TAG "Error @ counter: %i, Sensor deactivated" ), me007_data_s.error_cnt_current_u8 );
             me007_data_s.state_e = ME007_STATE_NOT_DETECTED;
             return;
         }
     }
-
-
-
-
 }
 
 
@@ -359,9 +368,11 @@ void me007_show( uint8_t type_u8 )
     switch ( type_u8 )
     {
     case ME007_SHOW_TYPE_JS:
-        ResponseAppend_P( PSTR( ",\"" ME007_WS_MQTT_MSG_TAG "\":{\"" D_JSON_DISTANCE "\":%1_f,\"" D_JSON_TEMPERATURE "\":%1_f}" ),
+        ResponseAppend_P( PSTR( ",\"" ME007_WS_MQTT_MSG_TAG "\":{\"" D_JSON_DISTANCE "\":%1_f,\"" D_JSON_TEMPERATURE "\":%1_f,\"" ME007_SENSOR_ERROR_CNT_CURRENT_TAG "\":%i,\"" ME007_SENSOR_ERROR_CNT_TOTAL_TAG "\":%i}" ),
                                &me007_data_s.distance_cm_f32,
-                               &me007_data_s.temperature_deg_f32 );
+                               &me007_data_s.temperature_deg_f32,
+                               me007_data_s.error_cnt_current_u8,
+                               me007_data_s.error_cnt_total_u16 );
 #ifdef USE_DOMOTICZ
         if ( 0U == TasmotaGlobal.tele_period )
         {
