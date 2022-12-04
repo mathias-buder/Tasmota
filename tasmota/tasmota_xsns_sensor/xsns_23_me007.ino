@@ -54,8 +54,8 @@
 #define ME007_SERIAL_FRAME_SIZE            6U   /**< Total frame size: 6 byte  */
 #define ME007_SERIAL_DATA_SIZE             5U   /**< Header (1Byte) + distance (2 byte) + temperature (2 byte): 5 byte */
 #define ME007_SERIAL_MAX_WAIT_TIME         61U  /**< Max. wait time for data after trigger signal @unit ms */
-#define ME007_SERIAL_MAX_DATA_RECEIVE_TIME 50U  /**< Max. time to receive entire data frame @unit ms */
-#define ME007_TRIG_SIG_DURATION            4U   /**< Time duration of trigger low-pulse @unit ms */
+#define ME007_SERIAL_MAX_DATA_RECEIVE_TIME 500U  /**< Max. time to receive entire data frame @unit ms */
+#define ME007_TRIG_SIG_DURATION_MS         1U   /**< Time duration of trigger low-pulse @unit ms */
 #define ME007_MEDIAN_FILTER_SIZE           5U   /**< Median filter samples @unit sample */
 #define ME007_SENSOR_NUM_ERROR             10U  /**< Number of tries to detect sensor */
 
@@ -212,7 +212,7 @@ bool me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
     uint8_t                   buffer_idx_u8                      = 0U;
     uint8_t                   data_byte_u8                       = 0U;
     uint32_t                  timestamp_ms_u32                   = 0U;
-    uint8_t                   data_receive_time_ms_u8            = 0U;
+    uint16_t                   data_receive_time_ms_u8            = 0U;
 
     if (    ( nullptr != p_distance_cm_f32 )
          && ( nullptr != p_temperature_f32 )
@@ -220,7 +220,7 @@ bool me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
     {
         /* Trigger new sensor measurement */
         digitalWrite( me007_data_s.pin_trig_u8, LOW );
-        delay( ME007_TRIG_SIG_DURATION );               /**< @details Wait 1ms to give the oin time to go low */
+        delay( ME007_TRIG_SIG_DURATION_MS );               /**< @details Wait 1ms to give the oin time to go low */
         digitalWrite( me007_data_s.pin_trig_u8, HIGH );
 
         /* Store trigger time */
