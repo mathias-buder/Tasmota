@@ -17,9 +17,6 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-//#define USE_ME007
-//#define ME007_ENABLE_MEDIAN_FILTER
-
 #ifdef USE_ME007
 /*********************************************************************************************\
  * ME007 - Ultrasonic distance sensor
@@ -40,18 +37,19 @@
 /*********************************************************************************************/
 /* Defines */
 /*********************************************************************************************/
-#define XSNS_23 23
+#define XSNS_23                            23
 
-#define ME007_VERSION                      0x010000   /**< Driver version: 0x XX:Major, XX: Minor, XX: Patch -> 1.0.0*/
+#define ME007_VERSION                      "1.0.0"                                              /**< Driver version X.Y.Z: X:Major, Y: Minor, Z: Patch */
 
 #define ME007_DEBUG_MSG_TAG                "ME007: "
 #define ME007_WS_MQTT_MSG_TAG              "ME007"
 #define ME007_SENSOR_ERROR_CNT_CURRENT_TAG "ErrorCounterCurrent"
 #define ME007_SENSOR_ERROR_CNT_TOTAL_TAG   "ErrorCounterTotal"
+#define ME007_SENSOR_VERSION_TAG           "DriverVersion"
 
-#define ME007_MIN_SENSOR_DISTANCE 30U /**< Minimum measurement distance @unit cm */
+#define ME007_MIN_SENSOR_DISTANCE          30U                                                  /**< Minimum measurement distance @unit cm */
 #ifndef ME007_MAX_SENSOR_DISTANCE
-#define ME007_MAX_SENSOR_DISTANCE 800U /**< Maximum measurement distance @unit cm */
+#define ME007_MAX_SENSOR_DISTANCE          800U                                                 /**< Maximum measurement distance @unit cm */
 #endif
 #define ME007_WS_SCALE_SWITCH_THRESH       100U                                                  /**< @unit Distance threshold to switch between cm/m to be displayed on web-interface */
 #define ME007_SERIAL_IF_BAUD_RATE          9600U                                                 /**< Serial interface baud rate @unit Baud */
@@ -61,7 +59,8 @@
 #define ME007_SERIAL_MAX_DATA_RECEIVE_TIME 500U                                                  /**< Max. time to receive entire data frame @unit ms */
 #define ME007_TRIG_SIG_DURATION_MS         1U                                                    /**< Time duration of trigger low-pulse @unit ms */
 #define ME007_MEDIAN_FILTER_SIZE           5U                                                    /**< Median filter samples, must be an odd number @unit sample */
-#define ME007_MEDIAN_FILTER_MEDIAN_IDX     ( ( uint8_t )( ME007_MEDIAN_FILTER_SIZE - 1U) / 2U ) /**< Median filter samples @unit sample */
+#define ME007_MEDIAN_FILTER_MEDIAN_IDX     ( ( uint8_t )( ME007_MEDIAN_FILTER_SIZE - 1U) / 2U )  /**< Median filter samples @unit sample */
+#define ME007_MEDIAN_FILTER_MEASURE_DELAY  30U                                                   /**< Small delay between consecutive measurements @unit ms */
 #define ME007_SENSOR_NUM_ERROR             10U                                                   /**< Number of tries to detect sensor */
 
 /*********************************************************************************************/
@@ -126,13 +125,13 @@ typedef enum ME007_STATE_TYPE_TAG
  */
 struct
 {
-    uint8_t          pin_rx_u8;               /**< @details Serial interface receive pin */
-    uint8_t          pin_trig_u8;             /**< @details Sensor trigger pin */
-    ME007_STATE_TYPE state_e;                 /**< @details Global sensor state */
-    float            distance_cm_f32;         /**< @details Output distance measurement @unit cm */
-    float            temperature_deg_f32;     /**< @details Output temperature measurement @unit °C */
-    uint8_t          error_cnt_current_u8;    /**< @details Measurement error counter (current) */
-    uint16_t         error_cnt_total_u16;     /**< @details Measurement error counter (total) */
+    uint8_t          pin_rx_u8;            /**< @details Serial interface receive pin */
+    uint8_t          pin_trig_u8;          /**< @details Sensor trigger pin */
+    ME007_STATE_TYPE state_e;              /**< @details Global sensor state */
+    float            distance_cm_f32;      /**< @details Output distance measurement @unit cm */
+    float            temperature_deg_f32;  /**< @details Output temperature measurement @unit °C */
+    uint8_t          error_cnt_current_u8; /**< @details Measurement error counter (current) */
+    uint16_t         error_cnt_total_u16;  /**< @details Measurement error counter (total) */
 } me007_data_s;
 
 /*********************************************************************************************/
@@ -432,7 +431,12 @@ void me007_read_value( void )
         DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Error counter: Current: %i, Total: %i" ),
                                 me007_data_s.error_cnt_current_u8,
                                 me007_data_s.error_cnt_total_u16 );
-    
+
+        /* Add small delay between measurement */
+        if ( ( ME007_MEDIAN_FILTER_SIZE - 1U ) > idx_u8 )
+        {
+            delay( ME007_MEDIAN_FILTER_MEASURE_DELAY );
+        }
     #ifdef ME007_ENABLE_MEDIAN_FILTER
     }
 
@@ -452,7 +456,7 @@ void me007_show( ME007_SHOW_TYPE type_e )
     switch ( type_e )
     {
     case ME007_SHOW_TYPE_JS:
-        ResponseAppend_P( PSTR( ",\"" ME007_WS_MQTT_MSG_TAG "\":{\"" D_JSON_DISTANCE "\":%1_f,\"" D_JSON_TEMPERATURE "\":%1_f,\"" ME007_SENSOR_ERROR_CNT_CURRENT_TAG "\":%i,\"" ME007_SENSOR_ERROR_CNT_TOTAL_TAG "\":%i}" ),
+        ResponseAppend_P( PSTR( ",\"" ME007_WS_MQTT_MSG_TAG "\":{\"" D_JSON_DISTANCE "\":%1_f,\"" D_JSON_TEMPERATURE "\":%1_f,\"" ME007_SENSOR_ERROR_CNT_CURRENT_TAG "\":%i,\"" ME007_SENSOR_ERROR_CNT_TOTAL_TAG "\":%i,\"" ME007_SENSOR_VERSION_TAG "\":\"" ME007_VERSION "\"}" ),
                           &me007_data_s.distance_cm_f32,
                           &me007_data_s.temperature_deg_f32,
                           me007_data_s.error_cnt_current_u8,
