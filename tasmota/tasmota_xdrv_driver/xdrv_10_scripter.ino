@@ -469,6 +469,7 @@ struct SCRIPT_MEM {
     char *fast_script = 0;
     char *event_script = 0;
     char *html_script = 0;
+    char *teleperiod = 0;
     char *web_pages[10];
     uint32_t script_lastmillis;
     bool event_handeled = false;
@@ -6025,7 +6026,8 @@ int16_t retval;
   if (!glob_script_mem.scriptptr) {
     return -99;
   }
-  if (tasm_cmd_activ && tlen > 0) return 0;
+  if (tasm_cmd_activ && tlen >= 0) return 0;
+
   struct GVARS gv;
   gv.jo = 0;
   retval = Run_script_sub(type, tlen, &gv);
@@ -6040,7 +6042,7 @@ int16_t retval;
       return -99;
     }
 
-    if (tasm_cmd_activ && tlen>0) return 0;
+    if (tasm_cmd_activ && tlen >= 0) return 0;
 
     struct GVARS gv;
 
@@ -7062,7 +7064,8 @@ void ScripterEvery100ms(void) {
     if (ResponseLength()) {
       ResponseJsonStart();
       ResponseJsonEnd();
-      Run_Scripter(">T", 2, ResponseData());
+      //Run_Scripter(">T", 2, ResponseData());
+      if (glob_script_mem.teleperiod) Run_Scripter(glob_script_mem.teleperiod, 0, ResponseData());
     }
   }
   if (bitRead(Settings->rule_enabled, 0)) {
@@ -7554,6 +7557,7 @@ void set_callbacks() {
   if (Run_Scripter1(">F", -2, 0) == 99) {glob_script_mem.fast_script = glob_script_mem.section_ptr + 2;} else {glob_script_mem.fast_script = 0;}
   if (Run_Scripter1(">E", -2, 0) == 99) {glob_script_mem.event_script = glob_script_mem.section_ptr + 2;} else {glob_script_mem.event_script = 0;}
   if (Run_Scripter1(">C", -2, 0) == 99) {glob_script_mem.html_script = glob_script_mem.section_ptr + 2;} else {glob_script_mem.html_script = 0;}
+  if (Run_Scripter1(">T", -2, 0) == 99) {glob_script_mem.teleperiod = glob_script_mem.section_ptr + 2;} else {glob_script_mem.teleperiod = 0;}
 }
 
 void set_wpages(char *id, uint16_t index) {
@@ -7712,14 +7716,14 @@ else light_status += "true";
 light_status += ",";
 break;
 */
-
+String GetHueDeviceId(uint16_t id, uint8_t ep);
 
 void Script_HueStatus(String *response, uint16_t hue_devs) {
 
   if (hue_script[hue_devs].type=='p') {
     *response += FPSTR(SCRIPT_HUE_LIGHTS_STATUS_JSON2);
     response->replace("{j1", hue_script[hue_devs].name);
-    response->replace("{j2", GetHueDeviceId(hue_devs));
+    response->replace("{j2", GetHueDeviceId(hue_devs, 0));
     uint8_t pwr = glob_script_mem.fvars[hue_script[hue_devs].index[0] - 1];
     response->replace("{state}", (pwr ? "true" : "false"));
     return;
@@ -7793,7 +7797,7 @@ void Script_HueStatus(String *response, uint16_t hue_devs) {
 
   response->replace("{light_status}", light_status);
   response->replace("{j1", hue_script[hue_devs].name);
-  response->replace("{j2", GetHueDeviceId(hue_devs));
+  response->replace("{j2", GetHueDeviceId(hue_devs, 0));
 
 }
 
@@ -11474,7 +11478,8 @@ bool Xdrv10(uint32_t function)
     case FUNC_TELEPERIOD_RULES_PROCESS:
       if (bitRead(Settings->rule_enabled, 0)) {
         if (ResponseLength()) {
-          Run_Scripter(">T", 2, ResponseData());
+          //Run_Scripter(">T", 2, ResponseData());
+          if (glob_script_mem.teleperiod) Run_Scripter(glob_script_mem.teleperiod, 0, ResponseData());
         }
       }
       break;
