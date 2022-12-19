@@ -30,9 +30,6 @@
 /* Includes*/
 /*********************************************************************************************/
 #include <TasmotaSerial.h>
-#ifdef ME007_ENABLE_MEDIAN_FILTER
-#include <stdlib.h>
-#endif
 
 /*********************************************************************************************/
 /* Defines */
@@ -41,8 +38,8 @@
 
 #define ME007_VERSION                      "1.0.0"                                              /**< Driver version X.Y.Z: X:Major, Y: Minor, Z: Patch */
 
-#define ME007_DEBUG_MSG_TAG                "ME007: "
-#define ME007_WS_MQTT_MSG_TAG              "ME007"
+#define ME007_DEBUG_MSG_TAG                "ME7: "
+#define ME007_WS_MQTT_MSG_TAG              "ME7"
 #define ME007_SENSOR_ERROR_CNT_CURRENT_TAG "ErrorCounterCurrent"
 #define ME007_SENSOR_ERROR_CNT_TOTAL_TAG   "ErrorCounterTotal"
 #define ME007_SENSOR_VERSION_TAG           "DriverVersion"
@@ -51,7 +48,6 @@
 #ifndef ME007_MAX_SENSOR_DISTANCE
 #define ME007_MAX_SENSOR_DISTANCE          800U                                                 /**< Maximum measurement distance @unit cm */
 #endif
-#define ME007_WS_SCALE_SWITCH_THRESH       100U                                                  /**< @unit Distance threshold to switch between cm/m to be displayed on web-interface */
 #define ME007_SERIAL_IF_BAUD_RATE          9600U                                                 /**< Serial interface baud rate @unit Baud */
 #define ME007_SERIAL_SOF                   0xFF                                                  /**< Start of frame indicator (header) */
 #define ME007_SERIAL_FRAME_SIZE            6U                                                    /**< Total frame size: Header (1Byte) + Distance (2 byte) + Temperature (2 byte) + Checksum (1 byte) = 6 byte */
@@ -154,16 +150,15 @@ void me007_init( void );
  * @param[out] float* p_temperature_f32 Pointer to variable supposed to store the current temperature reading.
  * @return ME007_ERROR_TYPE Status of current measurement.
  */
-ME007_ERROR_TYPE me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 );
+ME007_ERROR_TYPE me007_measure( float* const p_distance_cm_f32, float* const p_temperature_f32 );
 
 /**
- * @details This function performs the measurement comparison to be used within qsort().
- * @param[in] const void* a Pointer to input variable one.
- * @param[in] const void* b Pointer to input variable two.
- * @return int Comparison result indicating whether a > b or a < b.
+ * @details This function sorts a list if float values in ascending order.
+ * @param[in] const void* p_list Pointer to list to be sorted
+ * @param[in] const uint8_t size_u8 Size of list to be sorted.
  */
 #ifdef ME007_ENABLE_MEDIAN_FILTER
-int me007_comp_dist_measurements( const void* p_a, const void* p_b );
+void me007_sort_asc( float* const p_list, const uint8_t size_u8 );
 #endif
 
 /**
@@ -175,7 +170,7 @@ void me007_read_value( void );
  * @details This function sends the current distance/temperature measurements to the web-interface / MQTT / Domoticz.
  * @param[in] ME007_SHOW_TYPE type_e Variable to decide where to output the sensor measurements.
  */
-void me007_show( ME007_SHOW_TYPE type_e );
+void me007_show( const ME007_SHOW_TYPE type_e );
 
 /*********************************************************************************************/
 /* Function Definitions */
@@ -244,7 +239,7 @@ void me007_init( void )
     }
 }
 
-ME007_ERROR_TYPE me007_measure( float* p_distance_cm_f32, float* p_temperature_f32 )
+ME007_ERROR_TYPE me007_measure( float* const p_distance_cm_f32, float* const p_temperature_f32 )
 {
     ME007_SERIAL_RECEIVE_TYPE state_e                             = ME007_SERIAL_RECEIVE_TYPE_SOF;  /**< @details Always start trying to receive SOF */
     uint8_t                   buffer_vu8[ME007_SERIAL_FRAME_SIZE] = {0U};
@@ -367,27 +362,38 @@ ME007_ERROR_TYPE me007_measure( float* p_distance_cm_f32, float* p_temperature_f
 }
 
 #ifdef ME007_ENABLE_MEDIAN_FILTER
-int me007_comp_dist_measurements( const void* p_a, const void* p_b )
+void me007_sort_asc( float* const p_list, const uint8_t size_u8 )
 {
-    float a_f32 = *( (float* ) p_a );
-    float b_f32 = *( (float* ) p_b );
-
-    return ( (int) ( ( a_f32 > b_f32 ) ) - ( (int) ( a_f32 < b_f32 ) ) );
+    if( NULL != p_list )
+    {
+        for( uint8_t idx_u8 = 0U; idx_u8 < size_u8; ++idx_u8 )
+        {
+            for( uint8_t idy_u8 = ( idx_u8 + 1U ); idy_u8 < size_u8; ++idy_u8 )
+            {
+                if( p_list[idx_u8] > p_list[idy_u8] )
+                {
+                    float tmp_f32  = p_list[idx_u8];
+                    p_list[idx_u8] = p_list[idy_u8];
+                    p_list[idy_u8] = tmp_f32;
+                }
+            }
+        }
+    }
 }
 #endif
 
 void me007_read_value( void )
 {
     float distance_cm_f32 = 0.0F;
-    #ifdef ME007_ENABLE_MEDIAN_FILTER
+#ifdef ME007_ENABLE_MEDIAN_FILTER
     float distance_buffer_vf32[ME007_MEDIAN_FILTER_SIZE] = {0.0F};
-    #endif
+#endif
 
     /* Record some sensor measurements */
-    #ifdef ME007_ENABLE_MEDIAN_FILTER
+#ifdef ME007_ENABLE_MEDIAN_FILTER
     for ( uint8_t idx_u8 = 0U; idx_u8 < ME007_MEDIAN_FILTER_SIZE; ++idx_u8 )
     {
-    #endif
+#endif
         ME007_ERROR_TYPE status_e = me007_measure( &distance_cm_f32,
                                                    &me007_data_s.temperature_deg_f32 );
 
@@ -395,12 +401,12 @@ void me007_read_value( void )
         {
         case ME007_ERROR_TYPE_NONE:
 
-            #ifdef ME007_ENABLE_MEDIAN_FILTER
+#ifdef ME007_ENABLE_MEDIAN_FILTER
             /* Store valid distance measurement into histogram buffer */
             distance_buffer_vf32[idx_u8] = distance_cm_f32;
-            #else
+#else
             me007_data_s.distance_cm_f32 = distance_cm_f32;
-            #endif
+#endif
 
             if ( 0U < me007_data_s.error_cnt_current_u8 )
             {
@@ -432,26 +438,24 @@ void me007_read_value( void )
                                 me007_data_s.error_cnt_current_u8,
                                 me007_data_s.error_cnt_total_u16 );
 
+#ifdef ME007_ENABLE_MEDIAN_FILTER
         /* Add small delay between measurement */
         if ( ( ME007_MEDIAN_FILTER_SIZE - 1U ) > idx_u8 )
         {
             delay( ME007_MEDIAN_FILTER_MEASURE_DELAY );
         }
-    #ifdef ME007_ENABLE_MEDIAN_FILTER
     }
 
     /* Sort median filter buffer and assign median value to current distance measurement */
-     qsort( distance_buffer_vf32,
-           ME007_MEDIAN_FILTER_SIZE,
-           sizeof( float* ),
-           me007_comp_dist_measurements );
+    me007_sort_asc( distance_buffer_vf32, ME007_MEDIAN_FILTER_SIZE );
 
+    /* Update distance measurement */
     me007_data_s.distance_cm_f32 = distance_buffer_vf32[ME007_MEDIAN_FILTER_MEDIAN_IDX];
-    #endif
+#endif
 
 }
 
-void me007_show( ME007_SHOW_TYPE type_e )
+void me007_show( const ME007_SHOW_TYPE type_e )
 {
     switch ( type_e )
     {
@@ -471,20 +475,9 @@ void me007_show( ME007_SHOW_TYPE type_e )
         break;
 #ifdef USE_WEBSERVER
     case ME007_SHOW_TYPE_WS:
-        if ( ME007_WS_SCALE_SWITCH_THRESH > me007_data_s.distance_cm_f32 )
-        {
-            WSContentSend_PD( HTTP_SNS_F_DISTANCE_CM,
-                              ME007_WS_MQTT_MSG_TAG,
-                              &me007_data_s.distance_cm_f32 );
-        }
-        else
-        {
-            /* Convert distance to meter */
-            float ws_distance_f32 = me007_data_s.distance_cm_f32 / 100.0F;
-            WSContentSend_PD( HTTP_SNS_F_DISTANCE_M,
-                              ME007_WS_MQTT_MSG_TAG,
-                              &ws_distance_f32 );
-        }
+        WSContentSend_PD( HTTP_SNS_F_DISTANCE_CM,
+                            ME007_WS_MQTT_MSG_TAG,
+                            &me007_data_s.distance_cm_f32 );
 
         WSContentSend_PD( HTTP_SNS_F_TEMP,
                           ME007_WS_MQTT_MSG_TAG,
