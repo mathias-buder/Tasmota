@@ -1,0 +1,35 @@
+---
+# We'll use defaults from the LLVM style, but with 4 columns indentation.
+BasedOnStyle: LLVM
+Language: Cpp
+IndentWidth: 4
+
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignTrailingComments: true
+AlignConsecutiveMacros: true
+
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterControlStatement: true
+  AfterFunction: true
+  AfterEnum: true
+  AfterStruct: true
+  AfterExternBlock: true
+  BeforeElse: true
+
+ColumnLimit: 0
+IncludeBlocks: Regroup
+IndentCaseLabels: false
+
+PointerAlignment: Left
+SortIncludes: true
+SortUsingDeclarations: true
+SpaceAfterCStyleCast: true
+SpaceBeforeAssignmentOperators: true
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInParentheses: true
+SpacesBeforeTrailingComments: 3
+UseTab: Never
