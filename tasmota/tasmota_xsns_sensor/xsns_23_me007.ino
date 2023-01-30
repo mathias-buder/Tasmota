@@ -312,6 +312,11 @@ ME007_ERROR_TYPE me007_measure( float* const p_distance_cm_f32, float* const p_t
                             /* Apply physical sensor measurement limits */
                             if ( ME007_MIN_SENSOR_DISTANCE > *p_distance_cm_f32 )
                             {
+                                /* Measurement below min. threshold ME007_MIN_SENSOR_DISTANCE: set value to 0.0F */
+                                DEBUG_SENSOR_LOG( PSTR( ME007_DEBUG_MSG_TAG "Measurement %s cm below min. threshold %i cm" ),
+                                                        String( *p_distance_cm_f32, 1U ).c_str(),
+                                                        ME007_MIN_SENSOR_DISTANCE );
+
                                 *p_distance_cm_f32 = 0.0F;
                             }
                             else if ( ME007_MAX_SENSOR_DISTANCE < *p_distance_cm_f32 )
